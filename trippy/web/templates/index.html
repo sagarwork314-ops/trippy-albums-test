@@ -24,8 +24,43 @@
       padding: 0.7rem 1.4rem; font-size: 1rem; cursor: pointer;
     }
     button:hover { background: #1d4ed8; }
+    button:disabled { background: #93b4f5; cursor: progress; }
     .hint { color: #888; font-size: 0.9rem; margin-top: 0.4rem; }
     .footnote { color: #aaa; font-size: 0.85rem; margin-top: 2rem; }
+
+    /* Indeterminate loading bar -- processing is synchronous (it all happens
+       within this one request), so we can't report real percentages; this
+       just signals "working on it" while the request is in flight. */
+    .progress {
+      display: none;
+      margin-top: 1.25rem;
+      height: 8px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      overflow: hidden;
+    }
+    .progress.active { display: block; }
+    .progress-bar {
+      width: 40%;
+      height: 100%;
+      border-radius: 999px;
+      background: #2563eb;
+      animation: progress-slide 1.1s ease-in-out infinite;
+    }
+    .progress-label {
+      display: none;
+      margin-top: 0.6rem;
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .progress-label.active { display: block; }
+    @keyframes progress-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+    @media (prefers-color-scheme: dark) {
+      .progress { background: #374151; }
+    }
   </style>
 </head>
 <body>
@@ -33,7 +68,7 @@
   <p class="tagline">Best-moments photo curation — entirely local, no AI/vision APIs.</p>
 
   <div class="card">
-    <form action="/curate" method="post" enctype="multipart/form-data">
+    <form id="curate-form" action="/curate" method="post" enctype="multipart/form-data">
       <div class="field">
         <label for="photos">Trip photos</label>
         <input id="photos" type="file" name="photos" accept="image/*" multiple required>
@@ -43,7 +78,12 @@
         <label for="count">How many should make the final cut?</label>
         <input id="count" type="number" name="count" value="100" min="1" max="1000">
       </div>
-      <button type="submit">Curate my trip</button>
+      <button id="curate-submit" type="submit">Curate my trip</button>
+      <div id="progress" class="progress"><div class="progress-bar"></div></div>
+      <p id="progress-label" class="progress-label">
+        Uploading and processing your photos — this runs entirely on this machine
+        and can take a while for large batches. Don't close this tab.
+      </p>
     </form>
   </div>
 
@@ -51,5 +91,16 @@
     Processing happens on this machine: classical computer-vision metrics plus a small
     local face-detection model. Nothing is uploaded to any third-party service.
   </p>
+
+  <script>
+    // Curation is synchronous server-side work -- there's no real progress to
+    // poll, so this is deliberately a "basic" indeterminate indicator: it just
+    // shows that something is happening and stops the user from double-submitting.
+    document.getElementById("curate-form").addEventListener("submit", function () {
+      document.getElementById("curate-submit").disabled = true;
+      document.getElementById("progress").classList.add("active");
+      document.getElementById("progress-label").classList.add("active");
+    });
+  </script>
 </body>
 </html>
