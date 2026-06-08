@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trippy — Curated selection</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 1200px; margin: 2.5rem auto; padding: 0 1.5rem; line-height: 1.5;
+    }
+    .header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    h1 { margin-bottom: 0.25rem; }
+    .summary { color: #888; }
+    .summary strong { color: inherit; }
+    a.back { color: #2563eb; text-decoration: none; font-weight: 600; }
+    a.back:hover { text-decoration: underline; }
+    .places {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.25rem;
+    }
+    .place-chip {
+      border: 1px solid #ddd; border-radius: 999px; padding: 0.3rem 0.8rem;
+      font-size: 0.82rem; color: #555; background: rgba(127,127,127,0.04);
+    }
+    .place-chip strong { color: inherit; }
+    .place-chip .selected-count { color: #2563eb; font-weight: 600; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem; margin-top: 2rem;
+    }
+    .card {
+      border: 1px solid #ddd; border-radius: 12px; overflow: hidden;
+      display: flex; flex-direction: column; background: rgba(127,127,127,0.03);
+    }
+    .card .thumb { position: relative; aspect-ratio: 4 / 3; background: #eee; }
+    .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rank {
+      position: absolute; top: 0.5rem; left: 0.5rem; background: rgba(0,0,0,0.65); color: white;
+      font-weight: 700; font-size: 0.85rem; border-radius: 999px; padding: 0.2rem 0.6rem;
+    }
+    .body { padding: 0.9rem 1rem 1.1rem; }
+    .composite { font-weight: 700; font-size: 1.05rem; }
+    .breakdown { color: #888; font-size: 0.82rem; margin: 0.2rem 0 0.6rem; }
+    .meta-line { color: #aaa; font-size: 0.8rem; display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .meta-line .place { color: #888; }
+    ul.reasons { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; color: #555; }
+    ul.reasons li { margin-bottom: 0.15rem; }
+    .empty { color: #888; margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Curated selection</h1>
+      <p class="summary">
+        <strong>{{ total_photos }}</strong> photos, timestamp-ordered &rarr;
+        <strong>{{ total_moments }}</strong> moments &rarr;
+        <strong>{{ total_places }}</strong> places &rarr;
+        <strong>{{ total_selected }}</strong> selected (balanced across both)
+      </p>
+    </div>
+    <a class="back" href="/">&larr; curate another batch</a>
+  </div>
+
+  {% if places %}
+  <div class="places">
+    {% for place in places %}
+    <span class="place-chip">
+      <strong>{{ place.name }}</strong> &middot; {{ place.photo_count }} photo{{ "s" if place.photo_count != 1 }},
+      <span class="selected-count">{{ place.selected_count }} selected</span>
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if photos %}
+  <div class="grid">
+    {% for p in photos %}
+    <div class="card">
+      <div class="thumb">
+        <span class="rank">#{{ p.rank }}</span>
+        <img src="{{ p.url }}" alt="{{ p.filename }}" loading="lazy">
+      </div>
+      <div class="body">
+        <div class="composite">Score {{ p.composite }}</div>
+        <div class="breakdown">people {{ p.people }} &middot; scenic {{ p.scenic }} &middot; appeal {{ p.appeal }}</div>
+        <div class="meta-line">
+          {% if p.timestamp %}<span class="timestamp">{{ p.timestamp }}</span>{% endif %}
+          {% if p.place %}<span class="place">&middot; {{ p.place }}</span>{% endif %}
+        </div>
+        <ul class="reasons">
+          {% for reason in p.reasons %}<li>{{ reason }}</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No images were found in that upload.</p>
+  {% endif %}
+</body>
+</html>
