@@ -136,5 +136,12 @@ def select_diverse_set(
                     continue
                 take(photo)
 
-    selected.sort(key=lambda p: (p.meta.timestamp is None, p.meta.timestamp or p.meta.id))
+    selected.sort(
+        key=lambda p: (
+            -p.score.composite,
+            p.meta.timestamp is None,
+            p.meta.timestamp or p.meta.id,
+            p.meta.id,
+        )
+    )
     return selected

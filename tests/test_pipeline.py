@@ -80,7 +80,7 @@ def test_pipeline_collapses_burst_and_spans_the_trip(tmp_path):
 
 def test_pipeline_deduplicates_the_burst_to_one_or_two_representatives(tmp_path):
     _build_synthetic_trip(tmp_path)
-    result = curate_folder(tmp_path, PipelineConfig(target_count=20))
+    result = curate_folder(tmp_path, PipelineConfig(target_count=8))
 
     burst_moment = next(m for m in result.moments if len(m.photo_ids) >= 5)
     assert len(burst_moment.photo_ids) == 9
@@ -90,6 +90,16 @@ def test_pipeline_deduplicates_the_burst_to_one_or_two_representatives(tmp_path)
         p for p in result.selected if "d1_burst" in p.meta.path
     ]
     assert len(burst_in_final) <= 2
+
+
+def test_pipeline_returns_every_photo_when_target_count_covers_the_full_batch(tmp_path):
+    _build_synthetic_trip(tmp_path)
+
+    result = curate_folder(tmp_path, PipelineConfig(target_count=20))
+
+    assert len(result.all_scored) == 20
+    assert len(result.selected) == 20
+    assert {p.meta.id for p in result.selected} == {p.meta.id for p in result.all_scored}
 
 
 def test_pipeline_is_deterministic(tmp_path):

@@ -110,3 +110,16 @@ def test_diverse_selection_respects_target_count_when_fewer_candidates_exist():
     places = {p.meta.id: "place-x" for p in candidates}
     selected = select_diverse_set(candidates, places, DiversityConfig(target_count=100))
     assert len(selected) == 5
+
+
+def test_diverse_selection_returns_selected_photos_ranked_by_score():
+    candidates = [
+        _scored("early-low", day=0, hour=9, composite=0.2),
+        _scored("late-high", day=0, hour=17, composite=0.95),
+        _scored("mid-mid", day=0, hour=12, composite=0.6),
+    ]
+    places = {p.meta.id: f"place-{p.meta.id}" for p in candidates}
+
+    selected = select_diverse_set(candidates, places, DiversityConfig(target_count=3))
+
+    assert [p.meta.id for p in selected] == ["late-high", "mid-mid", "early-low"]

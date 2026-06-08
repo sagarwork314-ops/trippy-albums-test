@@ -8,11 +8,13 @@ runs don't collide and the original files remain servable for display.
 """
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+from threading import Lock, Thread
 import tempfile
 import uuid
 from pathlib import Path
 
-from flask import Flask, abort, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from trippy.pipeline import PipelineConfig, curate_folder
 from trippy.types import CurationResult
@@ -24,10 +26,56 @@ UPLOAD_ROOT = Path(tempfile.gettempdir()) / "trippy-web-uploads"
 # under UPLOAD_ROOT until the OS cleans the temp dir).
 _RUNS: dict[str, CurationResult] = {}
 
+
+@dataclass
+class RunProgress:
+    status: str = "queued"
+    percent: int = 0
+    message: str = "Queued"
+    error: str | None = None
+
+
+_PROGRESS: dict[str, RunProgress] = {}
+_PROGRESS_LOCK = Lock()
+
 # A "1000 photos from a trip" batch can easily be several GB at full phone-camera
 # resolution. This server only binds to localhost by default, so there's no
 # remote-abuse concern — leave the upload size effectively uncapped.
 _MAX_UPLOAD_BYTES = None
+
+
+def _wants_json_response() -> bool:
+    return "application/json" in request.headers.get("Accept", "")
+
+
+def _set_progress(
+    run_id: str,
+    *,
+    status: str | None = None,
+    percent: int | None = None,
+    message: str | None = None,
+    error: str | None = None,
+) -> None:
+    with _PROGRESS_LOCK:
+        state = _PROGRESS.setdefault(run_id, RunProgress())
+        if status is not None:
+            state.status = status
+        if percent is not None:
+            state.percent = max(0, min(100, int(percent)))
+        if message is not None:
+            state.message = message
+        if error is not None:
+            state.error = error
+
+
+def _progress_payload(run_id: str) -> dict | None:
+    with _PROGRESS_LOCK:
+        state = _PROGRESS.get(run_id)
+        if state is None:
+            return None
+        payload = asdict(state)
+    payload["results_url"] = f"/results/{run_id}" if payload["status"] == "done" else None
+    return payload
 
 
 def create_app(maps_api_key: str | None = None) -> Flask:
@@ -49,8 +97,11 @@ def create_app(maps_api_key: str | None = None) -> Flask:
 
     @app.post("/curate")
     def curate():
+        wants_json = _wants_json_response()
         files = [f for f in request.files.getlist("photos") if f.filename]
         if not files:
+            if wants_json:
+                return jsonify({"error": "No photos selected"}), 400
             return redirect(url_for("index"))
 
         try:
@@ -67,11 +118,47 @@ def create_app(maps_api_key: str | None = None) -> Flask:
             dest = run_dir / Path(uploaded.filename).name
             uploaded.save(dest)
 
+        def process_run() -> None:
+            def report(fraction: float, message: str) -> None:
+                _set_progress(
+                    run_id,
+                    status="processing",
+                    percent=20 + round(fraction * 78),
+                    message=message,
+                )
+
+            try:
+                config = PipelineConfig(
+                    target_count=target_count,
+                    google_maps_api_key=app.config["TRIPPY_MAPS_API_KEY"],
+                )
+                result = curate_folder(run_dir, config, progress_callback=report)
+                _RUNS[run_id] = result
+                _set_progress(run_id, status="done", percent=100, message="Done")
+            except Exception as exc:  # pragma: no cover - exercised manually by local runs
+                _set_progress(run_id, status="error", message="Processing failed", error=str(exc))
+
+        if wants_json:
+            _set_progress(run_id, status="processing", percent=20, message="Upload complete. Starting processing")
+            Thread(target=process_run, daemon=True).start()
+            return jsonify({
+                "run_id": run_id,
+                "progress_url": url_for("progress", run_id=run_id),
+            }), 202
+
         config = PipelineConfig(target_count=target_count, google_maps_api_key=app.config["TRIPPY_MAPS_API_KEY"])
         result = curate_folder(run_dir, config)
         _RUNS[run_id] = result
+        _set_progress(run_id, status="done", percent=100, message="Done")
 
         return redirect(url_for("results", run_id=run_id))
+
+    @app.get("/progress/<run_id>")
+    def progress(run_id: str):
+        payload = _progress_payload(run_id)
+        if payload is None:
+            abort(404)
+        return jsonify(payload)
 
     @app.get("/results/<run_id>")
     def results(run_id: str):
@@ -79,9 +166,8 @@ def create_app(maps_api_key: str | None = None) -> Flask:
         if result is None:
             abort(404)
 
-        # `result.selected` is ordered chronologically (so the trip "reads" in
-        # order); the results page is a *ranking*, so re-sort by composite
-        # score, best first, before numbering.
+        # Keep the visible ranking score-first even if an older or external
+        # caller hands us a chronologically ordered CurationResult.
         by_score = sorted(result.selected, key=lambda s: s.score.composite, reverse=True)
 
         def place_label(photo_id: str) -> str | None:
@@ -106,8 +192,8 @@ def create_app(maps_api_key: str | None = None) -> Flask:
             for rank, scored in enumerate(by_score, start=1)
         ]
 
-        # Surfaces the underlying structure: photos are timestamp-ordered,
-        # clustered into moments, those moments cluster into places by GPS
+        # Surfaces the underlying structure: photos are clustered into moments,
+        # those moments cluster into places by GPS
         # proximity (optionally labelled via reverse-geocoding), and the
         # final selection is balanced across both days and places. This
         # summary makes that location-cluster layer visible on the page.
